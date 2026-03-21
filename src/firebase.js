@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth"; // 🔥 Added to support secure admin login
 
 const firebaseConfig = {
   apiKey: "AIzaSyDu2-w10OYM3qoBGIPBm8D1G7mgho1rrQg",
@@ -10,7 +11,11 @@ const firebaseConfig = {
   appId: "1:58926054159:web:f02a1cc6ba64c6b2c05c7a"
 };
 
+// Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// 🔥 IMPORTANT LINE
+// 🔥 Export Firestore (Database for tests and bookings)
 export const db = getFirestore(app);
+
+// 🔥 Export Auth (Security for Admin Login)
+export const auth = getAuth(app);

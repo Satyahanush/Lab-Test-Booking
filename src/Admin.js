@@ -113,7 +113,6 @@ function Admin() {
     });
   };
 
-  const today = new Date().toISOString().split("T")[0];
 
   const todayBookings = filterData(
     bookings.filter(b => b.status !== "done")

@@ -10,24 +10,16 @@ import {
 } from "firebase/firestore";
 
 function Admin() {
-
+  // 1. ALL HOOKS AT THE VERY TOP
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [password, setPassword] = useState("");
-
   const [activeTab, setActiveTab] = useState("bookings");
-
   const [bookings, setBookings] = useState([]);
   const [tests, setTests] = useState([]);
-
   const [testName, setTestName] = useState("");
   const [price, setPrice] = useState("");
 
-  // ✅ FETCH
-  useEffect(() => {
-    fetchBookings();
-    fetchTests();
-  }, []);
-
+  // 2. DEFINE FUNCTIONS BEFORE USE-EFFECT
   const fetchBookings = async () => {
     const snap = await getDocs(collection(db, "bookings"));
     setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -38,31 +30,13 @@ function Admin() {
     setTests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   };
 
-  // 🔐 LOGIN
-  if (!isLoggedIn) {
-    return (
-      <div style={{ padding: "50px", textAlign: "center" }}>
-        <h2>Admin Login</h2>
+  // 3. USE-EFFECT
+  useEffect(() => {
+    fetchBookings();
+    fetchTests();
+  }, []);
 
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-
-        <br /><br />
-
-        <button onClick={() => {
-          if (password === "1234") setIsLoggedIn(true);
-          else alert("Wrong password");
-        }}>
-          Login
-        </button>
-      </div>
-    );
-  }
-
-  // ✅ FUNCTIONS
+  // 4. ACTION FUNCTIONS
   const addTest = async () => {
     if (!testName || !price) return;
 
@@ -86,48 +60,66 @@ function Admin() {
     fetchBookings();
   };
 
-  // ================= UI =================
-
+  // 5. SINGLE RETURN WITH CONDITIONAL RENDERING (Fixes the Vercel Error)
   return (
-    <div style={{ padding: "20px" }}>
-
-      <h2>Admin Dashboard</h2>
-
-      <button onClick={() => setIsLoggedIn(false)}>Logout</button>
-
-      <div>
-        <button onClick={() => setActiveTab("bookings")}>Bookings</button>
-        <button onClick={() => setActiveTab("tests")}>Tests</button>
-      </div>
-
-      <hr />
-
-      {/* BOOKINGS */}
-      {activeTab === "bookings" && bookings.map(b => (
-        <div key={b.id} style={{ border: "1px solid #ccc", margin: "10px", padding: "10px" }}>
-          <b>{b.name}</b> ({b.phone})
-          <p>Total: ₹{b.total}</p>
-          <button onClick={() => markDone(b.id)}>Mark Done</button>
+    <>
+      {!isLoggedIn ? (
+        // 🔐 LOGIN UI
+        <div style={{ padding: "50px", textAlign: "center" }}>
+          <h2>Admin Login</h2>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <br /><br />
+          <button onClick={() => {
+            if (password === "1234") setIsLoggedIn(true);
+            else alert("Wrong password");
+          }}>
+            Login
+          </button>
         </div>
-      ))}
+      ) : (
+        // ✅ DASHBOARD UI
+        <div style={{ padding: "20px" }}>
+          <h2>Admin Dashboard</h2>
+          <button onClick={() => setIsLoggedIn(false)}>Logout</button>
 
-      {/* TESTS */}
-      {activeTab === "tests" && (
-        <div>
-          <input placeholder="Test Name" value={testName} onChange={e => setTestName(e.target.value)} />
-          <input placeholder="Price" value={price} onChange={e => setPrice(e.target.value)} />
-          <button onClick={addTest}>Add</button>
+          <div>
+            <button onClick={() => setActiveTab("bookings")}>Bookings</button>
+            <button onClick={() => setActiveTab("tests")}>Tests</button>
+          </div>
 
-          {tests.map(t => (
-            <div key={t.id}>
-              {t.name} - ₹{t.price}
-              <button onClick={() => deleteTest(t.id)}>Delete</button>
+          <hr />
+
+          {/* BOOKINGS */}
+          {activeTab === "bookings" && bookings.map(b => (
+            <div key={b.id} style={{ border: "1px solid #ccc", margin: "10px", padding: "10px" }}>
+              <b>{b.name}</b> ({b.phone})
+              <p>Total: ₹{b.total}</p>
+              <button onClick={() => markDone(b.id)}>Mark Done</button>
             </div>
           ))}
+
+          {/* TESTS */}
+          {activeTab === "tests" && (
+            <div>
+              <input placeholder="Test Name" value={testName} onChange={e => setTestName(e.target.value)} />
+              <input placeholder="Price" value={price} onChange={e => setPrice(e.target.value)} />
+              <button onClick={addTest}>Add</button>
+
+              {tests.map(t => (
+                <div key={t.id}>
+                  {t.name} - ₹{t.price}
+                  <button onClick={() => deleteTest(t.id)}>Delete</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
-
-    </div>
+    </>
   );
 }
 

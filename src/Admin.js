@@ -11,54 +11,24 @@ import {
 
 function Admin() {
 
-  // 🔐 LOGIN STATE
+  // 🔐 LOGIN
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [password, setPassword] = useState("");
 
-  // 🔹 NAVIGATION
+  // NAVIGATION
   const [activeTab, setActiveTab] = useState("bookings");
 
-  // 🔹 DATA
+  // DATA
   const [bookings, setBookings] = useState([]);
   const [tests, setTests] = useState([]);
 
+  // TEST INPUT
   const [testName, setTestName] = useState("");
   const [price, setPrice] = useState("");
 
-  // 🔍 FILTER
+  // FILTER
   const [search, setSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
-
-  // ================= LOGIN SCREEN =================
-  if (!isLoggedIn) {
-    return (
-      <div style={{ padding: "50px", textAlign: "center" }}>
-        <h2>Admin Login</h2>
-
-        <input
-          type="password"
-          placeholder="Enter Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: "10px", marginBottom: "10px" }}
-        />
-
-        <br />
-
-        <button
-          onClick={() => {
-            if (password === "Prasad@123") { // 🔴 change this
-              setIsLoggedIn(true);
-            } else {
-              alert("Wrong password");
-            }
-          }}
-        >
-          Login
-        </button>
-      </div>
-    );
-  }
 
   // ================= FETCH =================
 
@@ -80,10 +50,43 @@ function Admin() {
     setTests(data);
   };
 
+  // ✅ FIXED: Hooks must be BEFORE any return
   useEffect(() => {
     fetchBookings();
     fetchTests();
   }, []);
+
+  // ================= LOGIN SCREEN =================
+
+  if (!isLoggedIn) {
+    return (
+      <div style={{ padding: "50px", textAlign: "center" }}>
+        <h2>Admin Login</h2>
+
+        <input
+          type="password"
+          placeholder="Enter Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          style={{ padding: "10px", marginBottom: "10px" }}
+        />
+
+        <br />
+
+        <button
+          onClick={() => {
+            if (password === "1234") { // 🔴 change this later
+              setIsLoggedIn(true);
+            } else {
+              alert("Wrong password");
+            }
+          }}
+        >
+          Login
+        </button>
+      </div>
+    );
+  }
 
   // ================= TEST MANAGEMENT =================
 
@@ -118,7 +121,7 @@ function Admin() {
     fetchTests();
   };
 
-  // ================= BOOKING =================
+  // ================= BOOKINGS =================
 
   const markAsDone = async (id) => {
     await updateDoc(doc(db, "bookings", id), {
@@ -174,10 +177,7 @@ function Admin() {
       <h2 style={{ textAlign: "center" }}>Admin Dashboard</h2>
 
       {/* LOGOUT */}
-      <button
-        onClick={() => setIsLoggedIn(false)}
-        style={{ float: "right" }}
-      >
+      <button onClick={() => setIsLoggedIn(false)} style={{ float: "right" }}>
         Logout
       </button>
 

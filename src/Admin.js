@@ -10,16 +10,21 @@ import {
 } from "firebase/firestore";
 
 function Admin() {
-  // 1. ALL HOOKS AT THE VERY TOP
+
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] = useState("bookings");
+
   const [bookings, setBookings] = useState([]);
   const [tests, setTests] = useState([]);
+
   const [testName, setTestName] = useState("");
   const [price, setPrice] = useState("");
 
-  // 2. DEFINE FUNCTIONS BEFORE USE-EFFECT
+  // 🔍 FILTER STATES
+  const [search, setSearch] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+
   const fetchBookings = async () => {
     const snap = await getDocs(collection(db, "bookings"));
     setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -30,13 +35,11 @@ function Admin() {
     setTests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   };
 
-  // 3. USE-EFFECT
   useEffect(() => {
     fetchBookings();
     fetchTests();
   }, []);
 
-  // 4. ACTION FUNCTIONS
   const addTest = async () => {
     if (!testName || !price) return;
 
@@ -60,11 +63,21 @@ function Admin() {
     fetchBookings();
   };
 
-  // 5. SINGLE RETURN WITH CONDITIONAL RENDERING (Fixes the Vercel Error)
+  // 🔍 FILTER LOGIC
+  const filteredBookings = bookings.filter((b) => {
+    const matchSearch =
+      b.name?.toLowerCase().includes(search.toLowerCase()) ||
+      b.phone?.includes(search);
+
+    const matchDate =
+      !selectedDate || b.date === selectedDate;
+
+    return matchSearch && matchDate;
+  });
+
   return (
     <>
       {!isLoggedIn ? (
-        // 🔐 LOGIN UI
         <div style={{ padding: "50px", textAlign: "center" }}>
           <h2>Admin Login</h2>
           <input
@@ -81,33 +94,78 @@ function Admin() {
           </button>
         </div>
       ) : (
-        // ✅ DASHBOARD UI
-        <div style={{ padding: "20px" }}>
-          <h2>Admin Dashboard</h2>
+        <div style={{ padding: "20px", maxWidth: "700px", margin: "auto" }}>
+
+          <h2 style={{ textAlign: "center" }}>Admin Dashboard</h2>
           <button onClick={() => setIsLoggedIn(false)}>Logout</button>
 
-          <div>
+          <div style={{ marginTop: "10px" }}>
             <button onClick={() => setActiveTab("bookings")}>Bookings</button>
             <button onClick={() => setActiveTab("tests")}>Tests</button>
           </div>
 
           <hr />
 
+          {/* 🔍 FILTER UI */}
+          {activeTab === "bookings" && (
+            <div style={{ marginBottom: "15px" }}>
+              <input
+                placeholder="Search by name or phone"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ marginRight: "10px" }}
+              />
+
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            </div>
+          )}
+
           {/* BOOKINGS */}
-          {activeTab === "bookings" && bookings.map(b => (
-            <div key={b.id} style={{ border: "1px solid #ccc", margin: "10px", padding: "10px" }}>
+          {activeTab === "bookings" && filteredBookings.map(b => (
+            <div key={b.id} style={{
+              border: "1px solid #ccc",
+              margin: "10px 0",
+              padding: "10px",
+              borderRadius: "6px"
+            }}>
               <b>{b.name}</b> ({b.phone})
-              <p>Total: ₹{b.total}</p>
-              <button onClick={() => markDone(b.id)}>Mark Done</button>
+
+              <p>
+                {b.tests?.map(t => `${t.name} ₹${t.price}`).join(", ")}
+              </p>
+
+              <p><b>Total:</b> ₹{b.total}</p>
+
+              <p><b>Date:</b> {b.date}</p>
+
+              <button onClick={() => markDone(b.id)}>
+                Mark Done
+              </button>
             </div>
           ))}
 
           {/* TESTS */}
           {activeTab === "tests" && (
             <div>
-              <input placeholder="Test Name" value={testName} onChange={e => setTestName(e.target.value)} />
-              <input placeholder="Price" value={price} onChange={e => setPrice(e.target.value)} />
+              <input
+                placeholder="Test Name"
+                value={testName}
+                onChange={e => setTestName(e.target.value)}
+              />
+
+              <input
+                placeholder="Price"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+              />
+
               <button onClick={addTest}>Add</button>
+
+              <hr />
 
               {tests.map(t => (
                 <div key={t.id}>

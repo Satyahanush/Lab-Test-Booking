@@ -47,7 +47,7 @@ function Admin() {
 
         <button
           onClick={() => {
-            if (password === "1234") { // 🔴 change this
+            if (password === "Prasad@123") { // 🔴 change this
               setIsLoggedIn(true);
             } else {
               alert("Wrong password");

@@ -11,17 +11,54 @@ import {
 
 function Admin() {
 
+  // 🔐 LOGIN STATE
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [password, setPassword] = useState("");
+
+  // 🔹 NAVIGATION
   const [activeTab, setActiveTab] = useState("bookings");
 
+  // 🔹 DATA
   const [bookings, setBookings] = useState([]);
   const [tests, setTests] = useState([]);
 
   const [testName, setTestName] = useState("");
   const [price, setPrice] = useState("");
 
-  // 🔍 NEW STATES
+  // 🔍 FILTER
   const [search, setSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
+
+  // ================= LOGIN SCREEN =================
+  if (!isLoggedIn) {
+    return (
+      <div style={{ padding: "50px", textAlign: "center" }}>
+        <h2>Admin Login</h2>
+
+        <input
+          type="password"
+          placeholder="Enter Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          style={{ padding: "10px", marginBottom: "10px" }}
+        />
+
+        <br />
+
+        <button
+          onClick={() => {
+            if (password === "1234") { // 🔴 change this
+              setIsLoggedIn(true);
+            } else {
+              alert("Wrong password");
+            }
+          }}
+        >
+          Login
+        </button>
+      </div>
+    );
+  }
 
   // ================= FETCH =================
 
@@ -81,7 +118,7 @@ function Admin() {
     fetchTests();
   };
 
-  // ================= BOOKING STATUS =================
+  // ================= BOOKING =================
 
   const markAsDone = async (id) => {
     await updateDoc(doc(db, "bookings", id), {
@@ -91,9 +128,7 @@ function Admin() {
     fetchBookings();
   };
 
-  // ================= FILTER LOGIC =================
-
-  const today = new Date().toISOString().split("T")[0];
+  // ================= FILTER =================
 
   const filterData = (data) => {
     return data.filter((b) => {
@@ -108,6 +143,8 @@ function Admin() {
       return matchesSearch && matchesDate;
     });
   };
+
+  const today = new Date().toISOString().split("T")[0];
 
   const todayBookings = filterData(
     bookings.filter((b) => b.date === today && b.status !== "done")
@@ -136,6 +173,14 @@ function Admin() {
 
       <h2 style={{ textAlign: "center" }}>Admin Dashboard</h2>
 
+      {/* LOGOUT */}
+      <button
+        onClick={() => setIsLoggedIn(false)}
+        style={{ float: "right" }}
+      >
+        Logout
+      </button>
+
       {/* MENU */}
       <div style={{ marginBottom: "20px", textAlign: "center" }}>
         <button style={buttonStyle} onClick={() => setActiveTab("bookings")}>
@@ -151,11 +196,11 @@ function Admin() {
         </button>
       </div>
 
-      {/* 🔍 SEARCH + DATE FILTER */}
+      {/* SEARCH + FILTER */}
       {(activeTab === "bookings" || activeTab === "records") && (
-        <div style={{ marginBottom: "15px" }}>
+        <div>
           <input
-            placeholder="Search by name or phone"
+            placeholder="Search name/phone"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={inputStyle}
@@ -170,37 +215,33 @@ function Admin() {
         </div>
       )}
 
-      {/* ================= BOOKINGS ================= */}
+      {/* BOOKINGS */}
       {activeTab === "bookings" && (
         <div>
           <h3>Today's Bookings</h3>
 
-          {todayBookings.length === 0 && <p>No bookings found</p>}
-
           {todayBookings.map((b) => (
-            <div key={b.id} style={{
-              padding: "10px",
-              marginBottom: "10px",
-              border: "1px solid #ccc",
-              borderRadius: "8px"
-            }}>
-              <p><b>{b.name}</b></p>
-              <p>{b.phone}</p>
-              <p>{b.test}</p>
-              <p>{b.date} | {b.slot}</p>
+            <div key={b.id} style={{ border: "1px solid #ccc", padding: "10px", marginBottom: "10px" }}>
+              <b>{b.name}</b> ({b.phone})
+
+              <p>
+                {b.tests?.map(t => `${t.name} ₹${t.price}`).join(", ")}
+              </p>
+
+              <p>Total: ₹{b.total}</p>
 
               <button
-                style={{ ...buttonStyle, background: "green", color: "#fff" }}
+                style={{ background: "green", color: "#fff", padding: "8px" }}
                 onClick={() => markAsDone(b.id)}
               >
-                Mark as Done
+                Mark Done
               </button>
             </div>
           ))}
         </div>
       )}
 
-      {/* ================= TESTS ================= */}
+      {/* TESTS */}
       {activeTab === "tests" && (
         <div>
           <h3>Manage Tests</h3>
@@ -209,73 +250,46 @@ function Admin() {
             placeholder="Test Name"
             value={testName}
             onChange={(e) => setTestName(e.target.value)}
-            style={{ padding: "10px", width: "45%", marginRight: "5%" }}
           />
 
           <input
             placeholder="Price"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            style={{ padding: "10px", width: "45%" }}
           />
 
-          <br /><br />
+          <button onClick={addTest}>Add</button>
 
-          <button
-            style={{ ...buttonStyle, background: "#007bff", color: "#fff" }}
-            onClick={addTest}
-          >
-            Add Test
-          </button>
+          {tests.map((t) => (
+            <div key={t.id}>
+              {t.name}
 
-          <div style={{ marginTop: "20px" }}>
-            {tests.map((t) => (
-              <div key={t.id} style={{
-                padding: "10px",
-                border: "1px solid #ccc",
-                borderRadius: "8px",
-                marginBottom: "10px"
-              }}>
-                <b>{t.name}</b>
+              <input
+                type="number"
+                defaultValue={t.price}
+                onBlur={(e) => updateTestInline(t.id, e.target.value)}
+              />
 
-                <input
-                  type="number"
-                  defaultValue={t.price}
-                  onBlur={(e) => updateTestInline(t.id, e.target.value)}
-                  style={{ marginLeft: "10px", width: "80px" }}
-                />
-
-                <button
-                  style={{ ...buttonStyle, background: "red", color: "#fff" }}
-                  onClick={() => deleteTest(t.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
+              <button onClick={() => deleteTest(t.id)}>Delete</button>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* ================= RECORDS ================= */}
+      {/* RECORDS */}
       {activeTab === "records" && (
         <div>
           <h3>Completed Records</h3>
 
-          {records.length === 0 && <p>No records found</p>}
-
           {records.map((b) => (
-            <div key={b.id} style={{
-              padding: "10px",
-              marginBottom: "10px",
-              border: "1px solid #ccc",
-              borderRadius: "8px",
-              background: "#f0f0f0"
-            }}>
-              <p><b>{b.name}</b></p>
-              <p>{b.phone}</p>
-              <p>{b.test}</p>
-              <p>{b.date} | {b.slot}</p>
+            <div key={b.id} style={{ border: "1px solid #ccc", padding: "10px", marginBottom: "10px" }}>
+              <b>{b.name}</b> ({b.phone})
+
+              <p>
+                {b.tests?.map(t => `${t.name} ₹${t.price}`).join(", ")}
+              </p>
+
+              <p>Total: ₹{b.total}</p>
             </div>
           ))}
         </div>

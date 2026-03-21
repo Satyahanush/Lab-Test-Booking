@@ -11,7 +11,7 @@ import {
 
 function Admin() {
 
-  // 🔐 LOGIN
+  // 🔐 LOGIN STATE
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [password, setPassword] = useState("");
 
@@ -22,11 +22,9 @@ function Admin() {
   const [bookings, setBookings] = useState([]);
   const [tests, setTests] = useState([]);
 
-  // TEST INPUT
   const [testName, setTestName] = useState("");
   const [price, setPrice] = useState("");
 
-  // FILTER
   const [search, setSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
 
@@ -50,51 +48,16 @@ function Admin() {
     setTests(data);
   };
 
-  // ✅ FIXED: Hooks must be BEFORE any return
+  // ✅ ALWAYS FIRST (no condition)
   useEffect(() => {
     fetchBookings();
     fetchTests();
   }, []);
 
-  // ================= LOGIN SCREEN =================
-
-  if (!isLoggedIn) {
-    return (
-      <div style={{ padding: "50px", textAlign: "center" }}>
-        <h2>Admin Login</h2>
-
-        <input
-          type="password"
-          placeholder="Enter Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: "10px", marginBottom: "10px" }}
-        />
-
-        <br />
-
-        <button
-          onClick={() => {
-            if (password === "1234") { // 🔴 change this later
-              setIsLoggedIn(true);
-            } else {
-              alert("Wrong password");
-            }
-          }}
-        >
-          Login
-        </button>
-      </div>
-    );
-  }
-
   // ================= TEST MANAGEMENT =================
 
   const addTest = async () => {
-    if (!testName || !price) {
-      alert("Enter test name and price");
-      return;
-    }
+    if (!testName || !price) return alert("Enter test name & price");
 
     await addDoc(collection(db, "tests"), {
       name: testName,
@@ -127,7 +90,6 @@ function Admin() {
     await updateDoc(doc(db, "bookings", id), {
       status: "done"
     });
-
     fetchBookings();
   };
 
@@ -135,13 +97,12 @@ function Admin() {
 
   const filterData = (data) => {
     return data.filter((b) => {
-
       const matchesSearch =
         b.name?.toLowerCase().includes(search.toLowerCase()) ||
         b.phone?.includes(search);
 
       const matchesDate =
-        selectedDate === "" || b.date === selectedDate;
+        !selectedDate || b.date === selectedDate;
 
       return matchesSearch && matchesDate;
     });
@@ -159,117 +120,87 @@ function Admin() {
 
   // ================= UI =================
 
-  const buttonStyle = {
-    padding: "10px",
-    marginRight: "10px",
-    cursor: "pointer"
-  };
+  // 🔥 IMPORTANT: NO RETURN BEFORE THIS
+  return !isLoggedIn ? (
 
-  const inputStyle = {
-    padding: "10px",
-    marginRight: "10px",
-    marginBottom: "10px"
-  };
+    // LOGIN SCREEN
+    <div style={{ padding: "50px", textAlign: "center" }}>
+      <h2>Admin Login</h2>
 
-  return (
+      <input
+        type="password"
+        placeholder="Enter Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+
+      <br /><br />
+
+      <button onClick={() => {
+        if (password === "1234") setIsLoggedIn(true);
+        else alert("Wrong password");
+      }}>
+        Login
+      </button>
+    </div>
+
+  ) : (
+
+    // MAIN DASHBOARD
     <div style={{ padding: "20px", maxWidth: "600px", margin: "auto" }}>
 
       <h2 style={{ textAlign: "center" }}>Admin Dashboard</h2>
 
-      {/* LOGOUT */}
       <button onClick={() => setIsLoggedIn(false)} style={{ float: "right" }}>
         Logout
       </button>
 
-      {/* MENU */}
       <div style={{ marginBottom: "20px", textAlign: "center" }}>
-        <button style={buttonStyle} onClick={() => setActiveTab("bookings")}>
-          📋 Bookings
-        </button>
-
-        <button style={buttonStyle} onClick={() => setActiveTab("tests")}>
-          🧪 Tests
-        </button>
-
-        <button style={buttonStyle} onClick={() => setActiveTab("records")}>
-          📊 Records
-        </button>
+        <button onClick={() => setActiveTab("bookings")}>📋 Bookings</button>
+        <button onClick={() => setActiveTab("tests")}>🧪 Tests</button>
+        <button onClick={() => setActiveTab("records")}>📊 Records</button>
       </div>
 
-      {/* SEARCH + FILTER */}
       {(activeTab === "bookings" || activeTab === "records") && (
         <div>
           <input
-            placeholder="Search name/phone"
+            placeholder="Search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={inputStyle}
           />
-
           <input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            style={inputStyle}
           />
         </div>
       )}
 
       {/* BOOKINGS */}
-      {activeTab === "bookings" && (
-        <div>
-          <h3>Today's Bookings</h3>
-
-          {todayBookings.map((b) => (
-            <div key={b.id} style={{ border: "1px solid #ccc", padding: "10px", marginBottom: "10px" }}>
-              <b>{b.name}</b> ({b.phone})
-
-              <p>
-                {b.tests?.map(t => `${t.name} ₹${t.price}`).join(", ")}
-              </p>
-
-              <p>Total: ₹{b.total}</p>
-
-              <button
-                style={{ background: "green", color: "#fff", padding: "8px" }}
-                onClick={() => markAsDone(b.id)}
-              >
-                Mark Done
-              </button>
-            </div>
-          ))}
+      {activeTab === "bookings" && todayBookings.map((b) => (
+        <div key={b.id}>
+          <b>{b.name}</b> ({b.phone})
+          <p>{b.tests?.map(t => `${t.name} ₹${t.price}`).join(", ")}</p>
+          <p>Total: ₹{b.total}</p>
+          <button onClick={() => markAsDone(b.id)}>Done</button>
         </div>
-      )}
+      ))}
 
       {/* TESTS */}
       {activeTab === "tests" && (
         <div>
-          <h3>Manage Tests</h3>
-
-          <input
-            placeholder="Test Name"
-            value={testName}
-            onChange={(e) => setTestName(e.target.value)}
-          />
-
-          <input
-            placeholder="Price"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-
+          <input placeholder="Test" value={testName} onChange={(e) => setTestName(e.target.value)} />
+          <input placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} />
           <button onClick={addTest}>Add</button>
 
-          {tests.map((t) => (
+          {tests.map(t => (
             <div key={t.id}>
               {t.name}
-
               <input
                 type="number"
                 defaultValue={t.price}
                 onBlur={(e) => updateTestInline(t.id, e.target.value)}
               />
-
               <button onClick={() => deleteTest(t.id)}>Delete</button>
             </div>
           ))}
@@ -277,23 +208,13 @@ function Admin() {
       )}
 
       {/* RECORDS */}
-      {activeTab === "records" && (
-        <div>
-          <h3>Completed Records</h3>
-
-          {records.map((b) => (
-            <div key={b.id} style={{ border: "1px solid #ccc", padding: "10px", marginBottom: "10px" }}>
-              <b>{b.name}</b> ({b.phone})
-
-              <p>
-                {b.tests?.map(t => `${t.name} ₹${t.price}`).join(", ")}
-              </p>
-
-              <p>Total: ₹{b.total}</p>
-            </div>
-          ))}
+      {activeTab === "records" && records.map((b) => (
+        <div key={b.id}>
+          <b>{b.name}</b> ({b.phone})
+          <p>{b.tests?.map(t => `${t.name} ₹${t.price}`).join(", ")}</p>
+          <p>Total: ₹{b.total}</p>
         </div>
-      )}
+      ))}
 
     </div>
   );

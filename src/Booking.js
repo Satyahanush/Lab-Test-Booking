@@ -11,13 +11,17 @@ function Booking() {
   const [phone, setPhone] = useState("");
   const [date, setDate] = useState("");
   
-  const [status, setStatus] = useState("idle"); // idle, loading, success
+  const [status, setStatus] = useState("idle"); 
   const [bookingId, setBookingId] = useState("");
 
   useEffect(() => {
     const fetchTests = async () => {
-      const snap = await getDocs(collection(db, "tests"));
-      setAvailableTests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      try {
+        const snap = await getDocs(collection(db, "tests"));
+        setAvailableTests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (err) {
+        console.error("Fetch error:", err);
+      }
     };
     fetchTests();
   }, []);
@@ -30,10 +34,10 @@ function Booking() {
     }
   };
 
-  const totalAmount = selectedTests.reduce((sum, test) => sum + test.price, 0);
+  const totalAmount = selectedTests.reduce((sum, test) => sum + (Number(test.price) || 0), 0);
 
   const filteredTests = availableTests.filter(t => 
-    t.name.toLowerCase().includes(testSearch.toLowerCase())
+    t.name?.toLowerCase().includes(testSearch.toLowerCase())
   );
 
   const handleSubmit = async (e) => {
@@ -42,7 +46,6 @@ function Booking() {
     
     setStatus("loading");
     try {
-      // 1. Save to Firebase
       const docRef = await addDoc(collection(db, "bookings"), {
         name,
         phone,
@@ -56,11 +59,8 @@ function Booking() {
       const newBookingId = docRef.id.slice(0, 6).toUpperCase();
       setBookingId(newBookingId); 
 
-      // 2. SEND TELEGRAM ALERT TO YOUR FATHER (Narayana Prasad)
-      // REPLACE THE TOKEN BELOW WITH YOUR REAL TOKEN
-      const TELEGRAM_BOT_TOKEN = "YOUR_ACTUAL_BOT_TOKEN_HERE"; 
+      // 2. SEND TELEGRAM ALERT
       const TELEGRAM_CHAT_ID = "8703251648";
-      
       const message = `🚨 *New Lab Booking!*\n\n*ID:* ${newBookingId}\n*Patient:* ${name}\n*Phone:* ${phone}\n*Date:* ${date}\n*Total:* ₹${totalAmount}\n*Tests:* ${selectedTests.map(t => t.name).join(", ")}`;
 
       await fetch(`https://api.telegram.org/bot8688192298:AAG-iiHQJLq1iulo5PdI3UJRsHbDalzQx84/sendMessage`, {
@@ -83,12 +83,12 @@ function Booking() {
 
   if (status === "success") {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
-        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center border-t-4 border-green-500">
-          <div className="text-green-500 text-5xl mb-4">✅</div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans text-center">
+        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full border-t-4 border-green-500">
+          <div className="text-green-500 text-5xl mb-4 text-center mx-auto">✅</div>
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Booking Confirmed!</h2>
-          <p className="text-gray-600 mb-6">Thank you, {name}. Your test is scheduled for {date}.</p>
-          <div className="bg-gray-100 p-4 rounded-lg mb-6 text-center">
+          <p className="text-gray-600 mb-6 font-medium text-center">Thank you, {name}. Your test is scheduled for {date}.</p>
+          <div className="bg-gray-100 p-4 rounded-lg mb-6">
             <p className="text-sm text-gray-500 uppercase tracking-wide">Your Booking ID</p>
             <p className="text-3xl font-mono font-bold text-blue-700">{bookingId}</p>
           </div>
@@ -102,12 +102,11 @@ function Booking() {
     <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans">
       <div className="max-w-5xl mx-auto">
         <header className="text-center mb-10">
-          <h1 className="text-4xl font-extrabold text-blue-900">Sri Balaji Diagnostics</h1>
-          <p className="text-gray-600 mt-2">Professional Lab Tests at Your Convenience</p>
+          <h1 className="text-4xl font-extrabold text-blue-900 tracking-tight">Sri Balaji Diagnostics</h1>
+          <p className="text-gray-600 mt-2 font-medium">Professional Lab Tests at Your Convenience</p>
         </header>
 
         <div className="flex flex-col md:flex-row gap-8">
-          {/* LEFT: Test Selection */}
           <div className="flex-1 bg-white p-6 rounded-xl shadow-md border border-gray-100">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <span className="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm">1</span>
@@ -122,7 +121,7 @@ function Booking() {
               className="w-full p-3 mb-6 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition shadow-sm"
             />
 
-            <div className="grid grid-cols-1 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+            <div className="grid grid-cols-1 gap-3 max-h-[500px] overflow-y-auto pr-2">
               {filteredTests.map(test => {
                 const isSelected = selectedTests.find(t => t.id === test.id);
                 return (
@@ -132,8 +131,8 @@ function Booking() {
                     className={`p-4 rounded-lg border cursor-pointer transition-all flex justify-between items-center group ${isSelected ? 'border-blue-600 bg-blue-50 shadow-sm' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}
                   >
                     <div>
-                      <h3 className={`font-bold ${isSelected ? 'text-blue-800' : 'text-gray-700 group-hover:text-blue-600'}`}>{test.name}</h3>
-                      <p className="text-xs text-gray-400 uppercase tracking-wider">Accurate Results</p>
+                      <h3 className={`font-bold ${isSelected ? 'text-blue-800' : 'text-gray-700'}`}>{test.name}</h3>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">High Precision</p>
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="font-bold text-gray-900 text-lg">₹{test.price}</span>
@@ -147,7 +146,6 @@ function Booking() {
             </div>
           </div>
 
-          {/* RIGHT: Form & Summary */}
           <div className="w-full md:w-[400px] space-y-6">
             <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
               <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -176,13 +174,13 @@ function Booking() {
                   <div className="text-sm space-y-2 mb-4 max-h-32 overflow-y-auto pr-2">
                     {selectedTests.length === 0 ? <p className="italic opacity-60 text-center">No tests selected.</p> : selectedTests.map(t => (
                       <div key={t.id} className="flex justify-between border-b border-blue-800 pb-1">
-                        <span className="truncate mr-2">{t.name}</span>
+                        <span className="truncate mr-2 font-medium">{t.name}</span>
                         <span className="font-mono">₹{t.price}</span>
                       </div>
                     ))}
                   </div>
                   <div className="flex justify-between items-center pt-2">
-                    <span className="text-lg font-medium opacity-90">Grand Total</span>
+                    <span className="text-lg font-medium opacity-90">Total Amount</span>
                     <span className="text-2xl font-black italic">₹{totalAmount}</span>
                   </div>
                 </div>
@@ -196,8 +194,7 @@ function Booking() {
                 </button>
               </form>
             </div>
-            
-            <p className="text-center text-xs text-gray-400">© 2026 Sri Balaji Diagnostics | Trusted Healthcare</p>
+            <p className="text-center text-xs text-gray-400 italic">© 2026 Sri Balaji Diagnostics | Quality Healthcare</p>
           </div>
         </div>
       </div>

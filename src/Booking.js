@@ -252,7 +252,7 @@ function Booking() {
             <div className="hidden md:block w-px h-5 bg-gray-300"></div>
             <div className="flex items-center gap-2">
               <span className="text-lg">📞</span>
-              <span className="font-semibold text-blue-700">+91 98765 43210</span>
+              <span className="font-semibold text-blue-700">+91 9849923729</span>
             </div>
           </div>
         </header>

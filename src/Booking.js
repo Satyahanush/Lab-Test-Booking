@@ -2,6 +2,22 @@ import React, { useEffect, useState } from "react";
 import { db } from "./firebase";
 import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 
+// === SET YOUR LAB LOCATION HERE ===
+// Updated to Kothapeta coordinates
+const LAB_LAT = 16.7162; 
+const LAB_LNG = 81.8967; 
+// ==================================
+
+// The Haversine Formula to calculate distance between two GPS points in kilometers
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 function Booking() {
   const [availableTests, setAvailableTests] = useState([]);
   const [testSearch, setTestSearch] = useState("");
@@ -16,7 +32,11 @@ function Booking() {
   const [patientAddress, setPatientAddress] = useState("");
   const [isLocating, setIsLocating] = useState(false);
   
-  // NEW COUPON STATES
+  // NEW DISTANCE & DELIVERY STATES
+  const [deliveryCharge, setDeliveryCharge] = useState(50); // Default flat rate if they type manually
+  const [serviceError, setServiceError] = useState("");
+  const [calculatedDistance, setCalculatedDistance] = useState(null);
+
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponMessage, setCouponMessage] = useState({ text: "", type: "" });
@@ -46,6 +66,16 @@ function Booking() {
     fetchTests();
   }, []);
 
+  // Reset delivery charge and errors when switching collection type
+  useEffect(() => {
+    if (collectionType === "lab") {
+      setServiceError("");
+      setDeliveryCharge(0);
+    } else if (collectionType === "home" && !calculatedDistance) {
+      setDeliveryCharge(50); // Reset to default manual fee
+    }
+  }, [collectionType, calculatedDistance]);
+
   const toggleTest = (test) => {
     if (selectedTests.find(t => t.id === test.id)) {
       setSelectedTests(selectedTests.filter(t => t.id !== test.id));
@@ -62,12 +92,31 @@ function Booking() {
     }
     
     setIsLocating(true);
+    setServiceError("");
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         const mapLink = `https://www.google.com/maps?q=$${lat},${lng}`;
         
+        // 1. Calculate Distance
+        const dist = calculateDistance(LAB_LAT, LAB_LNG, lat, lng);
+        setCalculatedDistance(dist);
+
+        // 2. Set Delivery Pricing Logic
+        if (dist > 10) {
+          setServiceError(`You are ${dist.toFixed(1)} km away. We only provide home collection within 10 km of our lab.`);
+          setDeliveryCharge(0);
+        } else if (dist <= 2) {
+          setDeliveryCharge(20);
+        } else if (dist <= 4) {
+          setDeliveryCharge(30);
+        } else {
+          setDeliveryCharge(50); // 4km to 10km range
+        }
+        
+        // 3. Update Address Box
         setPatientAddress((prev) => prev ? `${prev}\n\nMap Link: ${mapLink}` : `Map Link: ${mapLink}`);
         setIsLocating(false);
       },
@@ -78,7 +127,6 @@ function Booking() {
     );
   };
 
-  // COUPON VERIFICATION LOGIC
   const verifyCoupon = async () => {
     if (!couponInput) return;
     setCouponMessage({ text: "Checking...", type: "loading" });
@@ -104,17 +152,19 @@ function Booking() {
     t.name?.toLowerCase().includes(testSearch.toLowerCase())
   );
 
-  // FINANCIAL CALCULATIONS
+  // FINANCIAL CALCULATIONS UPDATED WITH DELIVERY
   const subtotal = selectedTests.reduce((sum, test) => sum + (Number(test.price) || 0), 0);
   const discountAmount = appliedCoupon ? Math.round((subtotal * appliedCoupon.discount) / 100) : 0;
-  const finalTotal = subtotal - discountAmount;
+  const currentDeliveryCharge = collectionType === "home" ? deliveryCharge : 0;
+  const finalTotal = subtotal - discountAmount + currentDeliveryCharge;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (selectedTests.length === 0) return alert("Please select at least one test.");
     if (!timeSlot) return alert("Please select a preferred time slot.");
     if (collectionType === "home" && !patientAddress) return alert("Please provide an address for home collection.");
-    
+    if (serviceError) return alert("We cannot accept this booking because the address is out of our service area.");
+
     setStatus("loading");
     try {
       const docRef = await addDoc(collection(db, "bookings"), {
@@ -125,6 +175,7 @@ function Booking() {
         tests: selectedTests,
         subtotal: subtotal,
         discount: discountAmount,
+        deliveryFee: currentDeliveryCharge,
         total: finalTotal,
         couponUsed: appliedCoupon ? appliedCoupon.code : null,
         status: "pending",
@@ -136,14 +187,14 @@ function Booking() {
       const newBookingId = docRef.id.slice(0, 6).toUpperCase();
       setBookingId(newBookingId); 
 
-      // TELEGRAM ALERT WITH COUPON INFO
       const TELEGRAM_BOT_TOKEN = "8688192298:AAG-iiHQJLq1iulo5PdI3UJRsHbDalzQx84"; 
       const TELEGRAM_CHAT_ID = "8703251648";
       
       const addressAlert = collectionType === "home" ? `\n*🏠 Home Collection:*\n${patientAddress}` : `\n*🏥 Type:* Lab Visit`;
-      const couponAlert = appliedCoupon ? `\n*Discount:* ₹${discountAmount} (${appliedCoupon.code})` : "";
+      const couponAlert = appliedCoupon ? `\n*Discount:* -₹${discountAmount} (${appliedCoupon.code})` : "";
+      const deliveryAlert = collectionType === "home" ? `\n*Delivery Fee:* +₹${currentDeliveryCharge}` : "";
       
-      const message = `🚨 *New Lab Booking!*\n\n*ID:* ${newBookingId}\n*Patient:* ${name}\n*Phone:* ${phone}\n*Date:* ${date}\n*Time:* ${timeSlot}\n*Subtotal:* ₹${subtotal}${couponAlert}\n*Total Paid:* ₹${finalTotal}${addressAlert}\n\n*Tests:* ${selectedTests.map(t => t.name).join(", ")}`;
+      const message = `🚨 *New Lab Booking!*\n\n*ID:* ${newBookingId}\n*Patient:* ${name}\n*Phone:* ${phone}\n*Date:* ${date}\n*Time:* ${timeSlot}\n*Subtotal:* ₹${subtotal}${couponAlert}${deliveryAlert}\n*Total Paid:* ₹${finalTotal}${addressAlert}\n\n*Tests:* ${selectedTests.map(t => t.name).join(", ")}`;
 
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
@@ -195,7 +246,8 @@ function Booking() {
           <div className="mt-5 flex flex-col md:flex-row items-center justify-center gap-4 text-sm text-gray-600 bg-gray-50 py-3 rounded-lg border border-gray-200 w-fit mx-auto px-6">
             <div className="flex items-center gap-2">
               <span className="text-lg">📍</span>
-              <span>Shop No. 1, Main Market Road, Hyderabad, Telangana</span>
+              {/* UPDATED ADDRESS HERE */}
+              <span className="text-left md:text-center">Sathiraju complex, near Ganapathi Bhojanam hotel, Main road, Kothapeta</span>
             </div>
             <div className="hidden md:block w-px h-5 bg-gray-300"></div>
             <div className="flex items-center gap-2">
@@ -294,9 +346,9 @@ function Booking() {
                 </div>
 
                 {collectionType === "home" && (
-                  <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 transition-all">
+                  <div className={`p-4 rounded-lg border transition-all ${serviceError ? 'bg-red-50 border-red-300' : 'bg-yellow-50 border-yellow-200'}`}>
                     <label className="block text-sm font-semibold text-gray-800 mb-1">Collection Address</label>
-                    <p className="text-xs text-gray-600 mb-2">Type your address or use GPS to share your exact location.</p>
+                    <p className="text-xs text-gray-600 mb-2">Use GPS to automatically calculate your delivery fee.</p>
                     
                     <textarea 
                       required 
@@ -311,19 +363,29 @@ function Booking() {
                       onClick={handleGetLocation} 
                       type="button"
                       disabled={isLocating}
-                      className="w-full py-2 bg-white border border-blue-500 text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition flex items-center justify-center gap-2"
+                      className="w-full py-2 bg-white border border-blue-500 text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition flex items-center justify-center gap-2 shadow-sm"
                     >
-                      {isLocating ? "Locating..." : "📍 Auto-Detect My Location"}
+                      {isLocating ? "Calculating Distance..." : "📍 Auto-Detect My Location"}
                     </button>
+
+                    {serviceError && (
+                      <p className="mt-3 text-sm font-bold text-red-600 bg-white p-2 border border-red-200 rounded text-center">
+                        ⚠️ {serviceError}
+                      </p>
+                    )}
+                    {calculatedDistance && !serviceError && (
+                      <p className="mt-3 text-sm font-bold text-green-700 bg-white p-2 border border-green-200 rounded text-center">
+                        ✓ Distance: {calculatedDistance.toFixed(1)} km (Delivery: ₹{deliveryCharge})
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {/* NEW COUPON UI IN BOOKING */}
                 <div className="pt-4 border-t border-gray-100">
                   <label className="block text-sm font-semibold text-gray-800 mb-2">Have a Coupon Code?</label>
                   <div className="flex gap-2">
                     <input type="text" placeholder="e.g. SAVE20" value={couponInput} onChange={(e) => setCouponInput(e.target.value)} className="flex-1 p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-green-500 outline-none uppercase" />
-                    <button type="button" onClick={verifyCoupon} className="bg-gray-900 text-white px-5 rounded-lg font-bold hover:bg-gray-800 transition">Apply</button>
+                    <button type="button" onClick={verifyCoupon} className="bg-gray-900 text-white px-5 rounded-lg font-bold hover:bg-gray-800 transition shadow-sm">Apply</button>
                   </div>
                   {couponMessage.text && (
                     <p className={`text-sm mt-2 font-semibold ${couponMessage.type === "error" ? "text-red-500" : "text-green-600"}`}>
@@ -332,7 +394,6 @@ function Booking() {
                   )}
                 </div>
 
-                {/* UPDATED SUMMARY UI WITH DISCOUNT LOGIC */}
                 <div className="mt-8 bg-blue-900 p-5 rounded-xl text-white shadow-inner">
                   <h3 className="font-bold text-blue-200 text-xs uppercase tracking-widest mb-3 text-center">Booking Summary</h3>
                   <div className="text-sm space-y-2 mb-4 max-h-32 overflow-y-auto pr-2">
@@ -356,6 +417,13 @@ function Booking() {
                         <span>- ₹{discountAmount}</span>
                       </div>
                     )}
+
+                    {collectionType === "home" && (
+                      <div className="flex justify-between items-center text-sm text-orange-300 font-bold">
+                        <span>Home Delivery Fee</span>
+                        <span>+ ₹{currentDeliveryCharge}</span>
+                      </div>
+                    )}
                     
                     <div className="flex justify-between items-center pt-2 mt-2 border-t border-blue-700">
                       <span className="text-lg font-medium opacity-90">Total Payable</span>
@@ -366,8 +434,8 @@ function Booking() {
 
                 <button 
                   type="submit" 
-                  disabled={status === "loading"}
-                  className={`w-full py-4 rounded-xl font-bold text-white text-lg transition-all shadow-lg ${status === "loading" ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0'}`}
+                  disabled={status === "loading" || !!serviceError}
+                  className={`w-full py-4 rounded-xl font-bold text-white text-lg transition-all shadow-lg ${status === "loading" || !!serviceError ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0'}`}
                 >
                   {status === "loading" ? "Processing..." : "Confirm Booking Now"}
                 </button>

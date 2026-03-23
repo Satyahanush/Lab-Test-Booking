@@ -42,6 +42,7 @@ function Booking() {
     
     setStatus("loading");
     try {
+      // 1. Save to Firebase
       const docRef = await addDoc(collection(db, "bookings"), {
         name,
         phone,
@@ -51,9 +52,30 @@ function Booking() {
         status: "pending",
         createdAt: serverTimestamp()
       });
-      setBookingId(docRef.id.slice(0, 6).toUpperCase()); // Generate a short Booking ID
+      
+      const newBookingId = docRef.id.slice(0, 6).toUpperCase();
+      setBookingId(newBookingId); 
+
+      // 2. SEND TELEGRAM ALERT TO YOUR FATHER (Narayana Prasad)
+      // REPLACE THE TOKEN BELOW WITH YOUR REAL TOKEN
+      const TELEGRAM_BOT_TOKEN = "YOUR_ACTUAL_BOT_TOKEN_HERE"; 
+      const TELEGRAM_CHAT_ID = "8703251648";
+      
+      const message = `🚨 *New Lab Booking!*\n\n*ID:* ${newBookingId}\n*Patient:* ${name}\n*Phone:* ${phone}\n*Date:* ${date}\n*Total:* ₹${totalAmount}\n*Tests:* ${selectedTests.map(t => t.name).join(", ")}`;
+
+      await fetch(`https://api.telegram.org/bot8688192298:AAG-iiHQJLq1iulo5PdI3UJRsHbDalzQx84/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: "Markdown"
+        })
+      });
+
       setStatus("success");
     } catch (error) {
+      console.error("Error:", error);
       alert("Error booking test. Please try again.");
       setStatus("idle");
     }
@@ -61,12 +83,12 @@ function Booking() {
 
   if (status === "success") {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
         <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center border-t-4 border-green-500">
           <div className="text-green-500 text-5xl mb-4">✅</div>
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Booking Confirmed!</h2>
           <p className="text-gray-600 mb-6">Thank you, {name}. Your test is scheduled for {date}.</p>
-          <div className="bg-gray-100 p-4 rounded-lg mb-6">
+          <div className="bg-gray-100 p-4 rounded-lg mb-6 text-center">
             <p className="text-sm text-gray-500 uppercase tracking-wide">Your Booking ID</p>
             <p className="text-3xl font-mono font-bold text-blue-700">{bookingId}</p>
           </div>
@@ -78,92 +100,106 @@ function Booking() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans">
-      <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-6">
-        
-        {/* LEFT COLUMN: Test Selection */}
-        <div className="flex-1 bg-white p-6 rounded-xl shadow-md border border-gray-100">
-          <h2 className="text-2xl font-bold text-blue-800 mb-6">1. Select Lab Tests</h2>
-          
-          <input 
-            type="text" 
-            placeholder="🔍 Search for a test (e.g., Blood Sugar)..." 
-            value={testSearch}
-            onChange={(e) => setTestSearch(e.target.value)}
-            className="w-full p-3 mb-4 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition"
-          />
+      <div className="max-w-5xl mx-auto">
+        <header className="text-center mb-10">
+          <h1 className="text-4xl font-extrabold text-blue-900">Sri Balaji Diagnostics</h1>
+          <p className="text-gray-600 mt-2">Professional Lab Tests at Your Convenience</p>
+        </header>
 
-          <div className="max-h-96 overflow-y-auto pr-2 space-y-2">
-            {filteredTests.map(test => {
-              const isSelected = selectedTests.find(t => t.id === test.id);
-              return (
-                <div 
-                  key={test.id} 
-                  onClick={() => toggleTest(test)}
-                  className={`p-4 rounded-lg border cursor-pointer transition flex justify-between items-center ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}
-                >
-                  <div>
-                    <h3 className={`font-bold ${isSelected ? 'text-blue-800' : 'text-gray-700'}`}>{test.name}</h3>
-                    <p className="text-sm text-gray-500">Results typically in 24 hrs</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-gray-800">₹{test.price}</span>
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
-                      {isSelected && <span className="text-white text-xs">✓</span>}
+        <div className="flex flex-col md:flex-row gap-8">
+          {/* LEFT: Test Selection */}
+          <div className="flex-1 bg-white p-6 rounded-xl shadow-md border border-gray-100">
+            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm">1</span>
+              Select Required Tests
+            </h2>
+            
+            <input 
+              type="text" 
+              placeholder="🔍 Search for a test (e.g., Blood Sugar)..." 
+              value={testSearch}
+              onChange={(e) => setTestSearch(e.target.value)}
+              className="w-full p-3 mb-6 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition shadow-sm"
+            />
+
+            <div className="grid grid-cols-1 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+              {filteredTests.map(test => {
+                const isSelected = selectedTests.find(t => t.id === test.id);
+                return (
+                  <div 
+                    key={test.id} 
+                    onClick={() => toggleTest(test)}
+                    className={`p-4 rounded-lg border cursor-pointer transition-all flex justify-between items-center group ${isSelected ? 'border-blue-600 bg-blue-50 shadow-sm' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}
+                  >
+                    <div>
+                      <h3 className={`font-bold ${isSelected ? 'text-blue-800' : 'text-gray-700 group-hover:text-blue-600'}`}>{test.name}</h3>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Accurate Results</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold text-gray-900 text-lg">₹{test.price}</span>
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                        {isSelected && <span className="text-white text-xs">✓</span>}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
-        </div>
 
-        {/* RIGHT COLUMN: Patient Details & Summary */}
-        <div className="w-full md:w-96 bg-white p-6 rounded-xl shadow-md border border-gray-100 h-fit">
-          <h2 className="text-2xl font-bold text-blue-800 mb-6">2. Patient Details</h2>
-          
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Enter patient name" />
+          {/* RIGHT: Form & Summary */}
+          <div className="w-full md:w-[400px] space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm">2</span>
+                Patient Details
+              </h2>
+              
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Full Name</label>
+                  <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Enter patient name" />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">WhatsApp Number</label>
+                  <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="10-digit mobile number" />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Preferred Date</label>
+                  <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                </div>
+
+                <div className="mt-8 bg-blue-900 p-5 rounded-xl text-white shadow-inner">
+                  <h3 className="font-bold text-blue-200 text-xs uppercase tracking-widest mb-3 text-center">Booking Summary</h3>
+                  <div className="text-sm space-y-2 mb-4 max-h-32 overflow-y-auto pr-2">
+                    {selectedTests.length === 0 ? <p className="italic opacity-60 text-center">No tests selected.</p> : selectedTests.map(t => (
+                      <div key={t.id} className="flex justify-between border-b border-blue-800 pb-1">
+                        <span className="truncate mr-2">{t.name}</span>
+                        <span className="font-mono">₹{t.price}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between items-center pt-2">
+                    <span className="text-lg font-medium opacity-90">Grand Total</span>
+                    <span className="text-2xl font-black italic">₹{totalAmount}</span>
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={status === "loading"}
+                  className={`w-full py-4 rounded-xl font-bold text-white text-lg transition-all shadow-lg ${status === "loading" ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0'}`}
+                >
+                  {status === "loading" ? "Confirming..." : "Confirm Booking Now"}
+                </button>
+              </form>
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number (WhatsApp)</label>
-              <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="10-digit mobile number" />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Date</label>
-              <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-
-            <div className="mt-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <h3 className="font-bold text-gray-700 mb-2">Booking Summary</h3>
-              <div className="text-sm text-gray-600 mb-3 space-y-1">
-                {selectedTests.length === 0 ? <p className="italic">No tests selected yet.</p> : selectedTests.map(t => (
-                  <div key={t.id} className="flex justify-between">
-                    <span>{t.name}</span>
-                    <span>₹{t.price}</span>
-                  </div>
-                ))}
-              </div>
-              <hr className="border-gray-300 my-2" />
-              <div className="flex justify-between items-center text-lg font-bold text-blue-800">
-                <span>Total Amount</span>
-                <span>₹{totalAmount}</span>
-              </div>
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={status === "loading"}
-              className={`w-full py-4 rounded-lg font-bold text-white text-lg transition ${status === "loading" ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'}`}
-            >
-              {status === "loading" ? "Processing..." : "Confirm Booking"}
-            </button>
-          </form>
+            <p className="text-center text-xs text-gray-400">© 2026 Sri Balaji Diagnostics | Trusted Healthcare</p>
+          </div>
         </div>
-
       </div>
     </div>
   );

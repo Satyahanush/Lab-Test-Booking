@@ -10,9 +10,29 @@ function Booking() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [date, setDate] = useState("");
+  const [timeSlot, setTimeSlot] = useState("");
+  
+  const [collectionType, setCollectionType] = useState("lab"); // "lab" or "home"
+  const [patientAddress, setPatientAddress] = useState("");
+  const [isLocating, setIsLocating] = useState(false);
+  
+  // NEW COUPON STATES
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponMessage, setCouponMessage] = useState({ text: "", type: "" });
   
   const [status, setStatus] = useState("idle"); 
   const [bookingId, setBookingId] = useState("");
+
+  const timeSlots = [
+    "06:00 AM - 08:00 AM",
+    "08:00 AM - 10:00 AM",
+    "10:00 AM - 12:00 PM",
+    "12:00 PM - 02:00 PM",
+    "02:00 PM - 04:00 PM",
+    "04:00 PM - 06:00 PM",
+    "06:00 PM - 08:00 PM"
+  ];
 
   useEffect(() => {
     const fetchTests = async () => {
@@ -34,15 +54,66 @@ function Booking() {
     }
   };
 
-  const totalAmount = selectedTests.reduce((sum, test) => sum + (Number(test.price) || 0), 0);
+  const handleGetLocation = (e) => {
+    e.preventDefault();
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const mapLink = `https://www.google.com/maps?q=$${lat},${lng}`;
+        
+        setPatientAddress((prev) => prev ? `${prev}\n\nMap Link: ${mapLink}` : `Map Link: ${mapLink}`);
+        setIsLocating(false);
+      },
+      (error) => {
+        alert("Unable to retrieve location. Please ensure location permissions are allowed.");
+        setIsLocating(false);
+      }
+    );
+  };
+
+  // COUPON VERIFICATION LOGIC
+  const verifyCoupon = async () => {
+    if (!couponInput) return;
+    setCouponMessage({ text: "Checking...", type: "loading" });
+    
+    try {
+      const snap = await getDocs(collection(db, "coupons"));
+      const allCoupons = snap.docs.map(doc => doc.data());
+      const foundCoupon = allCoupons.find(c => c.code === couponInput.toUpperCase().trim());
+      
+      if (foundCoupon) {
+        setAppliedCoupon(foundCoupon);
+        setCouponMessage({ text: `🎉 ${foundCoupon.code} applied! ${foundCoupon.discount}% Off`, type: "success" });
+      } else {
+        setAppliedCoupon(null);
+        setCouponMessage({ text: "Invalid or expired coupon code.", type: "error" });
+      }
+    } catch (err) {
+      setCouponMessage({ text: "Error checking coupon.", type: "error" });
+    }
+  };
 
   const filteredTests = availableTests.filter(t => 
     t.name?.toLowerCase().includes(testSearch.toLowerCase())
   );
 
+  // FINANCIAL CALCULATIONS
+  const subtotal = selectedTests.reduce((sum, test) => sum + (Number(test.price) || 0), 0);
+  const discountAmount = appliedCoupon ? Math.round((subtotal * appliedCoupon.discount) / 100) : 0;
+  const finalTotal = subtotal - discountAmount;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (selectedTests.length === 0) return alert("Please select at least one test.");
+    if (!timeSlot) return alert("Please select a preferred time slot.");
+    if (collectionType === "home" && !patientAddress) return alert("Please provide an address for home collection.");
     
     setStatus("loading");
     try {
@@ -50,20 +121,31 @@ function Booking() {
         name,
         phone,
         date,
+        timeSlot,
         tests: selectedTests,
-        total: totalAmount,
+        subtotal: subtotal,
+        discount: discountAmount,
+        total: finalTotal,
+        couponUsed: appliedCoupon ? appliedCoupon.code : null,
         status: "pending",
+        collectionType, 
+        address: collectionType === "home" ? patientAddress : "Lab Visit",
         createdAt: serverTimestamp()
       });
       
       const newBookingId = docRef.id.slice(0, 6).toUpperCase();
       setBookingId(newBookingId); 
 
-      // 2. SEND TELEGRAM ALERT
+      // TELEGRAM ALERT WITH COUPON INFO
+      const TELEGRAM_BOT_TOKEN = "8688192298:AAG-iiHQJLq1iulo5PdI3UJRsHbDalzQx84"; 
       const TELEGRAM_CHAT_ID = "8703251648";
-      const message = `🚨 *New Lab Booking!*\n\n*ID:* ${newBookingId}\n*Patient:* ${name}\n*Phone:* ${phone}\n*Date:* ${date}\n*Total:* ₹${totalAmount}\n*Tests:* ${selectedTests.map(t => t.name).join(", ")}`;
+      
+      const addressAlert = collectionType === "home" ? `\n*🏠 Home Collection:*\n${patientAddress}` : `\n*🏥 Type:* Lab Visit`;
+      const couponAlert = appliedCoupon ? `\n*Discount:* ₹${discountAmount} (${appliedCoupon.code})` : "";
+      
+      const message = `🚨 *New Lab Booking!*\n\n*ID:* ${newBookingId}\n*Patient:* ${name}\n*Phone:* ${phone}\n*Date:* ${date}\n*Time:* ${timeSlot}\n*Subtotal:* ₹${subtotal}${couponAlert}\n*Total Paid:* ₹${finalTotal}${addressAlert}\n\n*Tests:* ${selectedTests.map(t => t.name).join(", ")}`;
 
-      await fetch(`https://api.telegram.org/bot8688192298:AAG-iiHQJLq1iulo5PdI3UJRsHbDalzQx84/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -87,11 +169,14 @@ function Booking() {
         <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full border-t-4 border-green-500">
           <div className="text-green-500 text-5xl mb-4 text-center mx-auto">✅</div>
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Booking Confirmed!</h2>
-          <p className="text-gray-600 mb-6 font-medium text-center">Thank you, {name}. Your test is scheduled for {date}.</p>
+          <p className="text-gray-600 mb-6 font-medium text-center">Thank you, {name}. Your test is scheduled for {date} between {timeSlot}.</p>
           <div className="bg-gray-100 p-4 rounded-lg mb-6">
             <p className="text-sm text-gray-500 uppercase tracking-wide">Your Booking ID</p>
             <p className="text-3xl font-mono font-bold text-blue-700">{bookingId}</p>
           </div>
+          {collectionType === "home" && (
+            <p className="text-sm text-blue-600 font-medium mb-6">Our technician will contact you shortly before arriving at your location.</p>
+          )}
           <button onClick={() => window.location.reload()} className="text-blue-600 font-semibold hover:underline">Book Another Test</button>
         </div>
       </div>
@@ -101,13 +186,27 @@ function Booking() {
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans">
       <div className="max-w-5xl mx-auto">
-        <header className="text-center mb-10">
-          <h1 className="text-4xl font-extrabold text-blue-900 tracking-tight">Sri Balaji Diagnostics</h1>
-          <p className="text-gray-600 mt-2 font-medium">Professional Lab Tests at Your Convenience</p>
+        
+        <header className="text-center mb-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
+          <h1 className="text-4xl font-extrabold text-blue-900 tracking-tight mt-2">Sri Balaji Diagnostics</h1>
+          <p className="text-gray-600 mt-2 font-medium">Professional Lab Tests & Home Collection</p>
+          
+          <div className="mt-5 flex flex-col md:flex-row items-center justify-center gap-4 text-sm text-gray-600 bg-gray-50 py-3 rounded-lg border border-gray-200 w-fit mx-auto px-6">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📍</span>
+              <span>Shop No. 1, Main Market Road, Hyderabad, Telangana</span>
+            </div>
+            <div className="hidden md:block w-px h-5 bg-gray-300"></div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📞</span>
+              <span className="font-semibold text-blue-700">+91 98765 43210</span>
+            </div>
+          </div>
         </header>
 
         <div className="flex flex-col md:flex-row gap-8">
-          <div className="flex-1 bg-white p-6 rounded-xl shadow-md border border-gray-100">
+          <div className="flex-1 bg-white p-6 rounded-xl shadow-md border border-gray-100 h-fit">
             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <span className="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm">1</span>
               Select Required Tests
@@ -146,14 +245,14 @@ function Booking() {
             </div>
           </div>
 
-          <div className="w-full md:w-[400px] space-y-6">
+          <div className="w-full md:w-[450px] space-y-6">
             <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
                 <span className="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm">2</span>
                 Patient Details
               </h2>
               
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1">Full Name</label>
                   <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Enter patient name" />
@@ -161,14 +260,79 @@ function Booking() {
                 
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1">WhatsApp Number</label>
-                  <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="10-digit mobile number" />
+                  <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="10-digit number" />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-600 mb-1">Preferred Date</label>
-                  <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-600 mb-1">Date</label>
+                    <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-600 mb-1">Time Slot</label>
+                    <select required value={timeSlot} onChange={(e) => setTimeSlot(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition">
+                      <option value="" disabled>Select time</option>
+                      {timeSlots.map((slot, index) => (
+                        <option key={index} value={slot}>{slot}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
+                <div className="pt-2 border-t border-gray-100">
+                  <label className="block text-sm font-semibold text-gray-800 mb-3">Collection Method</label>
+                  <div className="flex gap-4">
+                    <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition ${collectionType === "lab" ? 'border-blue-600 bg-blue-50 text-blue-800 font-bold' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      <input type="radio" name="collection" value="lab" checked={collectionType === "lab"} onChange={() => setCollectionType("lab")} className="hidden" />
+                      🏥 Visit Lab
+                    </label>
+                    <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition ${collectionType === "home" ? 'border-blue-600 bg-blue-50 text-blue-800 font-bold' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      <input type="radio" name="collection" value="home" checked={collectionType === "home"} onChange={() => setCollectionType("home")} className="hidden" />
+                      🏠 Home Collection
+                    </label>
+                  </div>
+                </div>
+
+                {collectionType === "home" && (
+                  <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 transition-all">
+                    <label className="block text-sm font-semibold text-gray-800 mb-1">Collection Address</label>
+                    <p className="text-xs text-gray-600 mb-2">Type your address or use GPS to share your exact location.</p>
+                    
+                    <textarea 
+                      required 
+                      value={patientAddress} 
+                      onChange={(e) => setPatientAddress(e.target.value)} 
+                      className="w-full p-3 mb-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" 
+                      placeholder="e.g., Flat 202, Building A..." 
+                      rows="3"
+                    ></textarea>
+                    
+                    <button 
+                      onClick={handleGetLocation} 
+                      type="button"
+                      disabled={isLocating}
+                      className="w-full py-2 bg-white border border-blue-500 text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition flex items-center justify-center gap-2"
+                    >
+                      {isLocating ? "Locating..." : "📍 Auto-Detect My Location"}
+                    </button>
+                  </div>
+                )}
+
+                {/* NEW COUPON UI IN BOOKING */}
+                <div className="pt-4 border-t border-gray-100">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">Have a Coupon Code?</label>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="e.g. SAVE20" value={couponInput} onChange={(e) => setCouponInput(e.target.value)} className="flex-1 p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-green-500 outline-none uppercase" />
+                    <button type="button" onClick={verifyCoupon} className="bg-gray-900 text-white px-5 rounded-lg font-bold hover:bg-gray-800 transition">Apply</button>
+                  </div>
+                  {couponMessage.text && (
+                    <p className={`text-sm mt-2 font-semibold ${couponMessage.type === "error" ? "text-red-500" : "text-green-600"}`}>
+                      {couponMessage.text}
+                    </p>
+                  )}
+                </div>
+
+                {/* UPDATED SUMMARY UI WITH DISCOUNT LOGIC */}
                 <div className="mt-8 bg-blue-900 p-5 rounded-xl text-white shadow-inner">
                   <h3 className="font-bold text-blue-200 text-xs uppercase tracking-widest mb-3 text-center">Booking Summary</h3>
                   <div className="text-sm space-y-2 mb-4 max-h-32 overflow-y-auto pr-2">
@@ -179,9 +343,24 @@ function Booking() {
                       </div>
                     ))}
                   </div>
-                  <div className="flex justify-between items-center pt-2">
-                    <span className="text-lg font-medium opacity-90">Total Amount</span>
-                    <span className="text-2xl font-black italic">₹{totalAmount}</span>
+                  
+                  <div className="pt-2 space-y-1">
+                    <div className="flex justify-between items-center text-sm text-blue-200">
+                      <span>Subtotal</span>
+                      <span>₹{subtotal}</span>
+                    </div>
+                    
+                    {appliedCoupon && (
+                      <div className="flex justify-between items-center text-sm text-green-400 font-bold">
+                        <span>Discount ({appliedCoupon.code})</span>
+                        <span>- ₹{discountAmount}</span>
+                      </div>
+                    )}
+                    
+                    <div className="flex justify-between items-center pt-2 mt-2 border-t border-blue-700">
+                      <span className="text-lg font-medium opacity-90">Total Payable</span>
+                      <span className="text-2xl font-black italic text-green-400">₹{finalTotal}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -190,7 +369,7 @@ function Booking() {
                   disabled={status === "loading"}
                   className={`w-full py-4 rounded-xl font-bold text-white text-lg transition-all shadow-lg ${status === "loading" ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0'}`}
                 >
-                  {status === "loading" ? "Confirming..." : "Confirm Booking Now"}
+                  {status === "loading" ? "Processing..." : "Confirm Booking Now"}
                 </button>
               </form>
             </div>

@@ -2,10 +2,6 @@ import React, { useEffect, useState } from "react";
 import { db } from "./firebase";
 import { collection, getDocs, addDoc, getDoc, doc, serverTimestamp } from "firebase/firestore";
 
-// Import our Component UI blocks
-import BookingSelection from "./components/BookingSelection";
-import CartSummary from "./components/CartSummary";
-
 // ==========================================
 // The Haversine Formula: Calculates exact straight-line distance in kilometers
 // ==========================================
@@ -25,7 +21,6 @@ function Booking() {
   const [availablePackages, setAvailablePackages] = useState([]);
   
   // --- DYNAMIC SETTINGS FROM ADMIN PORTAL ---
-  // We provide safe default values just in case the database hasn't loaded yet
   const [settings, setSettings] = useState({
     deliveryEnabled: true,
     maxDistance: 10,
@@ -99,35 +94,27 @@ function Booking() {
   // 2. CENTRALIZED DELIVERY PRICING ENGINE
   // ==========================================
   useEffect(() => {
-    // If visiting lab, reset everything to 0
     if (collectionType === "lab") {
       setServiceError(""); 
       setDeliveryCharge(0);
     } 
     else if (collectionType === "home") {
-      // If they haven't used GPS yet, apply a fallback flat rate (if delivery is enabled)
       if (calculatedDistance === null) {
         setDeliveryCharge(settings.deliveryEnabled ? 50 : 0); 
         setServiceError("");
       } 
       else {
-        // Enforce the Admin's Maximum Distance Rule
         if (calculatedDistance > settings.maxDistance) {
           setServiceError(`You are ${calculatedDistance.toFixed(1)} km away. We only service within ${settings.maxDistance} km of our centers.`);
-          setDeliveryCharge(0); // Set to 0 because booking is blocked anyway
+          setDeliveryCharge(0); 
         } 
         else {
           setServiceError("");
-          
-          // Apply "FREE DELIVERY" Master Override from Admin Portal
           if (!settings.deliveryEnabled) {
               setDeliveryCharge(0); 
           } 
           else {
-              // Calculate dynamic fee based on Admin pricing tiers
               const sortedTiers = [...settings.tiers].sort((a,b) => a.upTo - b.upTo);
-              
-              // Default to the highest tier fee if they somehow fall between gaps
               let fee = sortedTiers[sortedTiers.length - 1]?.fee || 50; 
               
               for (let t of sortedTiers) {
@@ -172,11 +159,8 @@ function Booking() {
       (position) => {
         const lat = position.coords.latitude; 
         const lng = position.coords.longitude;
-        
-        // Formatted exactly like your screenshot
         const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
         
-        // Find distance to the CLOSEST active lab center
         let minDistance = Infinity;
         settings.centers.forEach(center => {
            const d = calculateDistance(center.lat, center.lng, lat, lng);
@@ -186,8 +170,6 @@ function Booking() {
         });
 
         setCalculatedDistance(minDistance);
-        
-        // Append map link without erasing manually typed address
         setPatientAddress((prev) => prev ? `${prev}\n\nMap Link:\n${mapLink}` : `Map Link:\n${mapLink}`);
         setIsLocating(false);
       },
@@ -199,7 +181,7 @@ function Booking() {
   };
 
   // ==========================================
-  // 5. FINANCIAL CALCULATIONS (SWIGGY STYLE)
+  // 5. FINANCIAL CALCULATIONS & COUPONS
   // ==========================================
   const subtotal = cartItems.reduce((sum, item) => sum + (item.discountedPrice || item.price), 0);
   
@@ -211,7 +193,6 @@ function Booking() {
   const currentDeliveryCharge = collectionType === "home" ? deliveryCharge : 0;
   const finalTotal = subtotal - discountAmount + currentDeliveryCharge;
 
-  // Verify Coupon
   const verifyCoupon = async () => {
     if (!couponInput) return;
     setCouponMessage({ text: "Checking...", type: "loading" });
@@ -237,7 +218,6 @@ function Booking() {
     }
   };
 
-  // Recalculate coupon message if cart changes
   useEffect(() => {
     if (appliedCoupon) {
       if (couponEligibleSubtotal === 0 && cartItems.length > 0) {
@@ -247,6 +227,11 @@ function Booking() {
       }
     }
   }, [cartItems, appliedCoupon, couponEligibleSubtotal]);
+
+  // Search filter
+  const filteredTests = availableTests.filter(t => 
+    t.name?.toLowerCase().includes(testSearch.toLowerCase())
+  );
 
   // ==========================================
   // 6. FORM SUBMISSION & TELEGRAM ALERT
@@ -260,35 +245,23 @@ function Booking() {
 
     setStatus("loading");
     try {
-      // Create Database Record
       const docRef = await addDoc(collection(db, "bookings"), {
-        name, 
-        phone, 
-        date, 
-        timeSlot, 
-        cartItems: cartItems, 
-        subtotal: subtotal, 
-        discount: discountAmount, 
-        deliveryFee: currentDeliveryCharge, 
-        total: finalTotal,
-        couponUsed: appliedCoupon ? appliedCoupon.code : null, 
-        status: "pending", 
-        collectionType, 
-        address: collectionType === "home" ? patientAddress : "Lab Visit", 
+        name, phone, date, timeSlot, cartItems: cartItems, subtotal: subtotal, 
+        discount: discountAmount, deliveryFee: currentDeliveryCharge, total: finalTotal,
+        couponUsed: appliedCoupon ? appliedCoupon.code : null, status: "pending", 
+        collectionType, address: collectionType === "home" ? patientAddress : "Lab Visit", 
         createdAt: serverTimestamp()
       });
       
       const newBookingId = docRef.id.slice(0, 6).toUpperCase();
       setBookingId(newBookingId); 
 
-      // Send Telegram Alert
       const TELEGRAM_BOT_TOKEN = "8688192298:AAG-iiHQJLq1iulo5PdI3UJRsHbDalzQx84"; 
       const TELEGRAM_CHAT_ID = "8703251648";
       
       const addressAlert = collectionType === "home" ? `\n*🏠 Home Collection:*\n${patientAddress}` : `\n*🏥 Type:* Lab Visit`;
       const couponAlert = appliedCoupon && discountAmount > 0 ? `\n*Discount:* -₹${discountAmount} (${appliedCoupon.code})` : "";
       
-      // Conditionally format delivery fee in Telegram based on settings
       let deliveryAlert = "";
       if (collectionType === "home") {
           deliveryAlert = `\n*Delivery Fee:* ${settings.deliveryEnabled && currentDeliveryCharge > 0 ? `+₹${currentDeliveryCharge}` : "FREE"}`;
@@ -361,24 +334,152 @@ function Booking() {
             <div className="hidden md:block w-px h-6 bg-gray-300"></div>
             <div className="flex items-center gap-2">
               <span className="text-xl">📞</span>
-              <span className="font-black text-blue-700 text-base">+91 9849923729</span>
+              <span className="font-black text-blue-700 text-base">+91 98765 43210</span>
             </div>
           </div>
         </header>
 
         <div className="flex flex-col lg:flex-row gap-8">
           
-          {/* LEFT SIDE: SELECTION AREA (Imported Component) */}
-          <BookingSelection 
-            availablePackages={availablePackages} 
-            availableTests={availableTests} 
-            cartItems={cartItems} 
-            toggleItem={toggleItem} 
-            testSearch={testSearch} 
-            setTestSearch={setTestSearch} 
-          />
+          {/* ========================================== */}
+          {/* LEFT SIDE: PACKAGES AND TESTS */}
+          {/* ========================================== */}
+          <div className="flex-1 space-y-8">
+            
+            {/* Packages Module */}
+            {availablePackages.length > 0 && (
+              <div className="bg-gradient-to-br from-purple-50 to-white p-6 md:p-8 rounded-2xl shadow-md border border-purple-100 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100 rounded-full blur-3xl opacity-50"></div>
+                  
+                  <h2 className="text-2xl font-bold text-purple-900 mb-6 flex items-center gap-2 relative z-10">
+                    ✨ Exclusive Health Packages
+                  </h2>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
+                    {availablePackages.map(pkg => {
+                        const isSelected = cartItems.find(i => i.id === pkg.id);
+                        
+                        return (
+                            <div 
+                              key={pkg.id} 
+                              onClick={() => toggleItem(pkg)} 
+                              className={`p-6 rounded-xl border-2 cursor-pointer transition-all duration-200 relative ${
+                                isSelected ? 'border-purple-600 bg-purple-100 shadow-md scale-[1.02]' : 'border-purple-200 bg-white hover:border-purple-400 hover:shadow-md'
+                              }`}
+                            >
+                                {pkg.discountedPrice && (
+                                  <div className="absolute -top-3 -right-2 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[11px] font-black px-3 py-1.5 rounded-full shadow-md tracking-wide">
+                                    SPECIAL OFFER
+                                  </div>
+                                )}
+                                
+                                <h3 className="font-black text-purple-900 text-xl leading-tight">{pkg.name}</h3>
+                                
+                                {!pkg.allowCoupons && (
+                                  <span className="inline-block mt-2 text-[10px] text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 uppercase font-bold tracking-wider">
+                                    No extra coupons
+                                  </span>
+                                )}
+                                
+                                <p className="text-sm text-gray-600 mt-3 mb-5 line-clamp-3 leading-relaxed">
+                                  Includes: {pkg.includes}
+                                </p>
+                                
+                                <div className="flex justify-between items-end border-t border-purple-200/50 pt-4 mt-auto">
+                                    <div>
+                                        {pkg.discountedPrice ? (
+                                          <>
+                                            <span className="text-sm text-gray-400 line-through block -mb-1 font-medium">₹{pkg.price}</span> 
+                                            <span className="font-black text-3xl text-green-600 tracking-tight">₹{pkg.discountedPrice}</span>
+                                          </>
+                                        ) : (
+                                          <span className="font-black text-3xl text-purple-900 tracking-tight">₹{pkg.price}</span>
+                                        )}
+                                    </div>
+                                    <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                      isSelected ? 'bg-purple-600 border-purple-600 shadow-inner' : 'border-gray-300 bg-gray-50'
+                                    }`}>
+                                        {isSelected && <span className="text-white text-sm font-bold">✓</span>}
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    })}
+                  </div>
+              </div>
+            )}
 
-          {/* RIGHT SIDE: CHECKOUT FORM */}
+            {/* Individual Tests Module */}
+            <div className="bg-white p-6 md:p-8 rounded-2xl shadow-md border border-gray-100 h-fit">
+              <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                🧪 Individual Tests
+              </h2>
+              
+              <div className="relative mb-6">
+                <span className="absolute left-4 top-3.5 text-gray-400 text-lg">🔍</span>
+                <input 
+                  type="text" 
+                  placeholder="Search for a test (e.g., Blood Sugar)..." 
+                  value={testSearch}
+                  onChange={(e) => setTestSearch(e.target.value)}
+                  className="w-full p-4 pl-12 border border-gray-200 rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none transition shadow-inner font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                {filteredTests.length === 0 ? (
+                    <p className="text-center text-gray-500 py-8 italic">No tests found matching your search.</p>
+                ) : filteredTests.map(test => {
+                  const isSelected = cartItems.find(t => t.id === test.id);
+                  
+                  return (
+                    <div 
+                      key={test.id} 
+                      onClick={() => toggleItem(test)} 
+                      className={`p-5 rounded-xl border-2 cursor-pointer transition-all flex justify-between items-center group ${
+                        isSelected ? 'border-blue-600 bg-blue-50 shadow-sm' : 'border-gray-100 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex-1 pr-4">
+                        <h3 className={`font-bold text-lg leading-tight ${isSelected ? 'text-blue-800' : 'text-gray-800'}`}>
+                          {test.name}
+                        </h3>
+                        
+                        {!test.allowCoupons && (
+                          <span className="inline-block mt-1 text-[10px] text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 uppercase font-bold tracking-wider">
+                            No extra coupons
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-5">
+                        <div className="text-right">
+                            {test.discountedPrice ? (
+                              <>
+                                <span className="text-xs text-gray-400 line-through block -mb-1 font-medium">₹{test.price}</span> 
+                                <span className="font-black text-xl text-green-600">₹{test.discountedPrice}</span>
+                              </>
+                            ) : (
+                              <span className="font-black text-gray-900 text-xl">₹{test.price}</span>
+                            )}
+                        </div>
+                        
+                        <div className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-colors ${
+                          isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'
+                        }`}>
+                          {isSelected && <span className="text-white text-sm font-bold">✓</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* ========================================== */}
+          {/* RIGHT SIDE: CHECKOUT FORM & SUMMARY */}
+          {/* ========================================== */}
           <div className="w-full lg:w-[450px] space-y-6">
             <div className="bg-white p-6 md:p-8 rounded-2xl shadow-md border border-gray-100 sticky top-8">
               <h2 className="text-2xl font-bold text-gray-800 mb-6 border-b border-gray-100 pb-4">Patient Details</h2>
@@ -486,17 +587,68 @@ function Booking() {
                   )}
                 </div>
 
-                {/* IMPORTED CART COMPONENT */}
-                <CartSummary 
-                  cartItems={cartItems} 
-                  subtotal={subtotal} 
-                  appliedCoupon={appliedCoupon} 
-                  discountAmount={discountAmount} 
-                  collectionType={collectionType} 
-                  currentDeliveryCharge={currentDeliveryCharge} 
-                  finalTotal={finalTotal} 
-                  deliveryEnabled={settings.deliveryEnabled} 
-                />
+                {/* ========================================== */}
+                {/* INLINE CART SUMMARY MODULE */}
+                {/* ========================================== */}
+                <div className="mt-8 bg-gray-900 p-6 rounded-2xl text-white shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
+                  
+                  <h3 className="font-bold text-gray-400 text-xs uppercase tracking-widest mb-4 border-b border-gray-700 pb-3 relative z-10">
+                    Bill Summary
+                  </h3>
+                  
+                  <div className="space-y-4 mb-5 max-h-48 overflow-y-auto pr-2 custom-scrollbar relative z-10">
+                    {cartItems.length === 0 ? (
+                        <p className="italic opacity-50 text-sm text-center py-2">Your cart is empty.</p>
+                    ) : cartItems.map(item => (
+                      <div key={item.id} className="pb-1">
+                        <div className="flex justify-between text-sm items-start">
+                          <span className="font-medium pr-3 leading-tight">{item.name}</span>
+                          <span className="font-mono font-bold">₹{item.discountedPrice || item.price}</span>
+                        </div>
+                        {item.allowCoupons === false && appliedCoupon && (
+                            <p className="text-[10px] text-orange-400 italic mt-1 font-medium">* Coupon not applicable on this item</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="pt-4 space-y-3 border-t border-gray-700 relative z-10">
+                    <div className="flex justify-between items-center text-sm text-gray-300">
+                      <span>Item Total</span>
+                      <span className="font-mono">₹{subtotal}</span>
+                    </div>
+                    
+                    {appliedCoupon && discountAmount > 0 && (
+                      <div className="flex justify-between items-center text-sm text-green-400 font-bold bg-green-900/30 p-2 rounded -mx-2 px-2">
+                        <span>Coupon Discount ({appliedCoupon.code})</span>
+                        <span className="font-mono">- ₹{discountAmount}</span>
+                      </div>
+                    )}
+
+                    {collectionType === "home" && (
+                      <div className={`flex justify-between items-center text-sm font-bold p-2 rounded -mx-2 px-2 transition-colors ${
+                        settings.deliveryEnabled && currentDeliveryCharge > 0 
+                          ? 'text-yellow-400 bg-yellow-900/20' 
+                          : 'text-green-400 bg-green-900/20'   
+                      }`}>
+                        <span>Home Delivery Fee</span>
+                        {settings.deliveryEnabled && currentDeliveryCharge > 0 ? (
+                            <span className="font-mono">+ ₹{currentDeliveryCharge}</span>
+                        ) : (
+                            <span className="uppercase tracking-widest text-xs border border-green-500 px-2 py-0.5 rounded bg-green-800 text-white shadow-sm">
+                              Free
+                            </span>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="flex justify-between items-center pt-4 mt-2 border-t border-gray-700">
+                      <span className="text-xl font-bold text-white uppercase tracking-wider">To Pay</span>
+                      <span className="text-3xl font-black text-white">₹{finalTotal}</span>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Submit Button */}
                 <button type="submit" disabled={status === "loading" || !!serviceError} className={`w-full py-5 rounded-2xl font-black text-white text-xl shadow-xl transition-all flex justify-center items-center gap-2 ${
